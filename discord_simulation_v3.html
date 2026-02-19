@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FinanceBot – Symulacja (SEC EDGAR)</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:      #313338; --bg2: #2b2d31; --bg3: #1e1f22;
+  --txt:     #dbdee1; --txt2: #b5bac1; --muted: #80848e;
+  --accent:  #5865f2;
+  --green:   #23a55a; --red: #f23f43; --gold: #f0b232; --blue: #00b0d7;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Syne',sans-serif;background:var(--bg3);color:var(--txt);height:100vh;display:flex;overflow:hidden;font-size:14px}
+
+/* SERVER */
+.srv{width:72px;background:var(--bg3);display:flex;flex-direction:column;align-items:center;padding:12px 0;gap:8px;flex-shrink:0}
+.si{width:48px;height:48px;border-radius:50%;background:var(--bg2);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:20px;transition:.15s;position:relative}
+.si:hover,.si.act{border-radius:30%;background:var(--accent)}
+.si.act::before{content:'';position:absolute;left:-16px;width:4px;height:40px;background:#fff;border-radius:0 4px 4px 0}
+.sdiv{width:32px;height:2px;background:rgba(255,255,255,.08);border-radius:1px}
+
+/* CHANNELS */
+.chl{width:232px;background:var(--bg2);display:flex;flex-direction:column;flex-shrink:0}
+.shdr{padding:0 16px;height:48px;font-weight:700;font-size:15px;border-bottom:1px solid var(--bg3);display:flex;align-items:center;justify-content:space-between;cursor:pointer;flex-shrink:0}
+.chsec{padding:16px 8px 4px;flex:1;overflow-y:auto}
+.chcat{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;padding:4px 8px;margin:8px 0 2px}
+.chitem{display:flex;align-items:center;gap:7px;padding:5px 8px;border-radius:4px;cursor:pointer;color:var(--muted);font-size:14px;font-weight:500;transition:.1s}
+.chitem:hover{background:rgba(255,255,255,.06);color:var(--txt2)}
+.chitem.act{background:rgba(255,255,255,.1);color:var(--txt)}
+.upanel{margin-top:auto;padding:8px;background:var(--bg3);display:flex;align-items:center;gap:8px;flex-shrink:0}
+.uav{width:32px;height:32px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0}
+.unm{font-size:13px;font-weight:600}
+.utg{font-size:11px;color:var(--muted)}
+.ubtn{width:28px;height:28px;border-radius:4px;background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center}
+
+/* CHAT */
+.chat{flex:1;display:flex;flex-direction:column;background:var(--bg);min-width:0}
+.chdr{height:48px;padding:0 16px;border-bottom:1px solid var(--bg3);display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;flex-shrink:0}
+.chash{font-size:22px;color:var(--muted)}
+
+/* PROGRESS */
+.prog-wrap{height:3px;background:rgba(255,255,255,.04);flex-shrink:0;position:relative}
+.prog-bar{height:100%;background:linear-gradient(90deg,var(--accent),var(--blue));width:0%}
+
+/* MESSAGES */
+.msgs{flex:1;overflow-y:auto;padding:8px 0 4px}
+.msgs::-webkit-scrollbar{width:6px}
+.msgs::-webkit-scrollbar-thumb{background:rgba(255,255,255,.08);border-radius:3px}
+
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.mg{display:flex;gap:16px;padding:4px 16px;animation:fadeUp .3s ease forwards}
+.mg.top{padding-top:16px}
+.mg:hover{background:rgba(0,0,0,.06)}
+
+.bav{width:40px;height:40px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:19px;margin-top:2px}
+.bav-quote {background:linear-gradient(135deg,#1db95a,#0a6632)}
+.bav-edgar {background:linear-gradient(135deg,#1565c0,#0d47a1)}
+.bav-ai    {background:linear-gradient(135deg,#b8860b,#7a5c00)}
+
+.mbody{flex:1;min-width:0}
+.mmeta{display:flex;align-items:baseline;gap:8px;margin-bottom:3px}
+.bname{font-size:15px;font-weight:700}
+.badge{background:var(--accent);color:#fff;font-size:9px;font-weight:800;padding:1px 5px;border-radius:3px;letter-spacing:.04em;text-transform:uppercase}
+.mtime{font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace}
+
+/* ── EMBEDS ── */
+.embed{border-radius:4px;border-left:4px solid;max-width:560px;padding:13px 16px;margin-top:4px;position:relative;overflow:hidden}
+.embed-bg{background:var(--bg2)}
+
+.etitle{font-size:15px;font-weight:700;color:#fff;margin-bottom:5px}
+.edesc{font-size:12px;color:var(--txt2);line-height:1.5;margin-bottom:11px}
+.egrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px 12px;margin-bottom:8px}
+.efname{font-size:11px;font-weight:700;color:var(--txt);margin-bottom:2px;font-family:'JetBrains Mono',monospace;letter-spacing:.02em}
+.efval{font-size:12.5px;color:var(--txt2);line-height:1.4}
+.efooter{font-size:11px;color:var(--muted);border-top:1px solid rgba(255,255,255,.05);padding-top:8px;font-family:'JetBrains Mono',monospace}
+
+/* EDGAR badge */
+.edgar-badge{display:inline-flex;align-items:center;gap:4px;background:rgba(0,176,215,.12);color:var(--blue);font-size:10px;font-weight:800;letter-spacing:.08em;padding:2px 8px;border-radius:3px;text-transform:uppercase;margin-bottom:8px;border:1px solid rgba(0,176,215,.25)}
+
+/* AI Report */
+.ai-badge{display:inline-flex;align-items:center;gap:4px;background:rgba(240,178,50,.12);color:var(--gold);font-size:10px;font-weight:800;letter-spacing:.08em;padding:2px 8px;border-radius:3px;text-transform:uppercase;margin-bottom:8px;border:1px solid rgba(240,178,50,.25)}
+.ai-section{margin-bottom:10px}
+.ai-sec-title{font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px;display:flex;align-items:center;gap:6px}
+.ai-sec-title::after{content:'';flex:1;height:1px;background:rgba(255,255,255,.06)}
+.ai-text{font-size:12.5px;color:var(--txt2);line-height:1.6}
+.ai-text strong{color:var(--txt);font-weight:700}
+.kpis{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.kpi{background:rgba(255,255,255,.05);border-radius:5px;padding:6px 10px;border:1px solid rgba(255,255,255,.07);flex:1;min-width:100px}
+.kpi-l{font-size:10px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px}
+.kpi-v{font-size:15px;font-weight:800;font-family:'JetBrains Mono',monospace}
+.kpi-v.up{color:var(--green)}.kpi-v.dn{color:var(--red)}.kpi-v.ne{color:var(--gold)}.kpi-v.wh{color:#fff}
+.bullets{list-style:none;display:flex;flex-direction:column;gap:3px}
+.bullets li{font-size:12px;color:var(--txt2);line-height:1.5;padding-left:12px;position:relative}
+.bullets li::before{content:'›';position:absolute;left:0;color:var(--gold);font-weight:800}
+.verdict{background:rgba(255,255,255,.04);border-radius:4px;padding:10px 12px;border-left:3px solid;font-size:12.5px;color:var(--txt2);line-height:1.6;margin-top:4px}
+.verdict strong{display:block;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px}
+
+/* BOTTOM */
+.bottom{flex-shrink:0;padding:6px 16px;display:flex;align-items:center;justify-content:space-between;background:rgba(0,0,0,.15)}
+.ni{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px}
+.cd{background:rgba(88,101,242,.2);color:var(--accent);border-radius:4px;padding:1px 8px;font-weight:700;font-size:12px;font-family:'JetBrains Mono',monospace;border:1px solid rgba(88,101,242,.3)}
+.qdot{width:8px;height:8px;border-radius:50%;background:var(--green);animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.qinfo{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px}
+
+/* INPUT */
+.cinput-wrap{padding:0 16px 16px;flex-shrink:0}
+.cinput{background:rgba(255,255,255,.06);border-radius:8px;padding:11px 16px;color:var(--muted);font-size:14px;font-family:'Syne',sans-serif;display:flex;align-items:center;justify-content:space-between}
+
+/* MEMBERS */
+.ml{width:228px;background:var(--bg2);padding:12px 8px;flex-shrink:0;overflow-y:auto}
+.mlcat{font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;padding:4px 8px;margin:8px 0 4px}
+.mlitem{display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:4px;cursor:pointer;color:var(--muted);transition:.1s}
+.mlitem:hover{background:rgba(255,255,255,.06);color:var(--txt2)}
+.mlav{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;position:relative}
+.dot{width:10px;height:10px;border-radius:50%;border:2px solid var(--bg2);position:absolute;bottom:0;right:0}
+.mlname{font-size:13px}
+
+/* SOURCES LEGEND */
+.src-legend{display:flex;gap:8px;flex-wrap:wrap;padding:4px 16px 0;flex-shrink:0}
+.src-tag{font-size:10px;padding:2px 8px;border-radius:3px;font-weight:700;letter-spacing:.04em;font-family:'JetBrains Mono',monospace}
+.src-yf{background:rgba(35,165,90,.12);color:var(--green);border:1px solid rgba(35,165,90,.25)}
+.src-ed{background:rgba(0,176,215,.12);color:var(--blue);border:1px solid rgba(0,176,215,.25)}
+.src-ai{background:rgba(240,178,50,.12);color:var(--gold);border:1px solid rgba(240,178,50,.25)}
+
+.green{color:var(--green)}.red{color:var(--red)}.gold{color:var(--gold)}.blue{color:var(--blue)}.white{color:#fff}
+</style>
+</head>
+<body>
+
+<div class="srv">
+  <div class="si act">📊</div>
+  <div class="sdiv"></div>
+  <div class="si">🎮</div>
+  <div class="si">🏦</div>
+  <div class="si" style="font-size:26px;color:var(--muted)">+</div>
+</div>
+
+<div class="chl">
+  <div class="shdr">📊 Inwestycje HQ <span style="color:var(--muted)">✓</span></div>
+  <div class="chsec">
+    <div class="chcat">▸ Ogólne</div>
+    <div class="chitem"># ogólny</div>
+    <div class="chitem"># zasady</div>
+    <div class="chcat">▸ Rynki 📈</div>
+    <div class="chitem act"># notowania-live</div>
+    <div class="chitem"># analizy</div>
+    <div class="chitem"># dyskusja</div>
+    <div class="chcat">▸ Głosowe</div>
+    <div class="chitem">🔊 Trading Room</div>
+  </div>
+  <div class="upanel">
+    <div class="uav">A</div>
+    <div style="flex:1"><div class="unm">adm1n</div><div class="utg">Online</div></div>
+    <div style="display:flex;gap:2px"><button class="ubtn">🎤</button><button class="ubtn">⚙️</button></div>
+  </div>
+</div>
+
+<div class="chat">
+  <div class="chdr">
+    <span class="chash">#</span>
+    notowania-live
+    <span style="color:var(--muted);font-size:12px;font-weight:400;margin-left:4px">Notowania · SEC EDGAR · Analiza AI · co 15 min</span>
+  </div>
+
+  <div class="src-legend">
+    <span class="src-tag src-yf">📈 Yahoo Finance – ceny</span>
+    <span class="src-tag src-ed">🏛️ SEC EDGAR – sprawozdania (bez API key)</span>
+    <span class="src-tag src-ai">🤖 Claude AI – analiza</span>
+  </div>
+
+  <div class="prog-wrap"><div class="prog-bar" id="pb"></div></div>
+
+  <div class="msgs" id="msgs"></div>
+
+  <div class="bottom">
+    <div class="ni">⏱ Następna runda za <span class="cd" id="cd">20:00</span></div>
+    <div class="qinfo"><div class="qdot"></div> FinanceBot aktywny</div>
+  </div>
+  <div class="cinput-wrap">
+    <div class="cinput">
+      <span>Wiadomość w #notowania-live</span>
+      <span style="font-size:18px;opacity:.4">😊 📎</span>
+    </div>
+  </div>
+</div>
+
+<div class="ml">
+  <div class="mlcat">Boty — 1</div>
+  <div class="mlitem">
+    <div class="mlav" style="background:linear-gradient(135deg,#1db95a,#0a6632)">📊<div class="dot" style="background:var(--accent)"></div></div>
+    <div><div class="mlname" style="color:var(--txt2)">FinanceBot</div><div style="font-size:11px;color:var(--accent);font-weight:700">BOT</div></div>
+  </div>
+  <div class="mlcat" style="margin-top:12px">Online — 4</div>
+  <div class="mlitem"><div class="mlav" style="background:var(--accent)">A<div class="dot" style="background:var(--green)"></div></div><span class="mlname">adm1n</span></div>
+  <div class="mlitem"><div class="mlav" style="background:#e67e22">K<div class="dot" style="background:var(--green)"></div></div><span class="mlname">Kowalski</span></div>
+  <div class="mlitem"><div class="mlav" style="background:#9b59b6">T<div class="dot" style="background:var(--green)"></div></div><span class="mlname">trader007</span></div>
+  <div class="mlitem"><div class="mlav" style="background:#e74c3c">M<div class="dot" style="background:var(--gold)"></div></div><span class="mlname">MaklerPL</span></div>
+</div>
+
+<script>
+// ── DATA ─────────────────────────────────────────────────────────
+const ROUNDS = [
+  // ── NVIDIA ──────────────────────────────────────────────────────
+  {
+    name:"NVIDIA Corporation", ticker:"NVDA", cik:"0001045810",
+    pos:true, color:"#76b900", cur:"USD",
+    // yfinance data
+    price:"136,82",change:"+2,84%",
+    cap:"3,35T USD",pe:"54,1",fwdpe:"31,2",eps:"2,53",
+    rev:"130,5B USD",revg:"+121%",mgross:"74,5%",mop:"62,1%",mnet:"55,0%",
+    ebitda:"88,1B USD",fcf:"60,8B USD",earng:"+145%",
+    roe:"123,8%",roa:"55,4%",dte:"0,43",cr:"4,23",
+    div:"0,03%",beta:"1,64",
+    h52:"153,13",l52:"47,32",vol:"193,4M",avol:"221,1M",
+    rec:"STRONG BUY",target:"175,00 USD",
+    emp:"32 000",sector:"Technologia",ind:"Półprzewodniki / GPU / AI",
+    desc:"NVIDIA to globalny lider w akceleratorach obliczeniowych AI. Układy GPU z serii Hopper/Blackwell napędzają centra danych największych firm tech na świecie, dając NVIDIA ponad 80% udziału w rynku AI compute.",
+    // SEC EDGAR data (10-K FY2024, koniec jan 2024)
+    edgar_period:"2024-01-28",
+    e_rev:"60,9B USD",e_gp:"44,3B USD",e_op:"32,9B USD",e_ni:"29,8B USD",
+    e_eps:"11,93 USD",e_mnet:"48,9%",e_mgr:"72,7%",e_mop:"54,1%",
+    e_assets:"65,7B USD",e_liab:"22,6B USD",e_eq:"43,1B USD",
+    e_cash:"25,9B USD",e_ltd:"8,5B USD",e_ca:"44,3B USD",e_cl:"10,4B USD",
+    e_cr:"4,26×",e_dr:"34,4%",
+    e_cfo:"28,1B USD",e_capex:"1,07B USD",e_fcf:"27,0B USD",e_div:"0,4B USD",
+    filings:[
+      {form:"10-K",date:"2024-02-21",url:"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001045810&type=10-K"},
+      {form:"10-Q",date:"2024-11-20",url:"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001045810&type=10-Q"},
+    ],
+    // AI report
+    verdict_color:"#23a55a",verdict_label:"BARDZO POZYTYWNY",
+    summary:"NVIDIA osiągnęła wyniki historyczne w roku fiskalnym 2024 — <strong>przychody +122% r/r do 60,9 mld USD</strong>, a zysk netto wzrósł do 29,8 mld USD (+581%). Spółka jest głównym beneficjentem globalnego boomu na infrastrukturę AI.",
+    kpis:[{l:"Przychody",v:"60,9B$",c:"up"},{l:"Marża netto",v:"48,9%",c:"up"},{l:"FCF",v:"27,0B$",c:"wh"}],
+    rvtxt:"<strong>Segment Data Center</strong> (87% przychodów): rosną wykładniczo dzięki GPU H100/H200. Klienci: Microsoft, Google, Amazon, Meta. Nowa architektura <strong>Blackwell</strong> (H200/B200) z backlogiem przekraczającym supply. Segment Gaming (3,3B) stabilny.",
+    risks:["Restrykcje eksportowe USA — ograniczenia sprzedaży H100 do Chin (ok. 15% przychodów)","Konkurencja: AMD MI300X, Intel Gaudi 3, własne chipy klientów (Meta, Google TPU)","Wycena premium P/E 54× – zakłada utrzymanie 50%+ wzrostu przez lata","Koncentracja na TSMC jako jedynym producencie — ryzyko supply chain"],
+    outlook:"Nvidia prognozuje przychody Q4 FY2025 na ok. 37,5 mld USD. Cykl wymiany Blackwell zapewnia widoczność na 2026. Długoterminowo: CUDA ecosystem = moat nie do obejścia w krótkim terminie.",
+    verdict:"NVIDIA jest fundamentalnie wyjątkową spółką, ale premium wycena wymaga ciągłego dostarczania wyników. Odpowiednia dla inwestorów akceptujących wysoką zmienność z długim horyzontem.",
+  },
+  // ── UBER ────────────────────────────────────────────────────────
+  {
+    name:"Uber Technologies", ticker:"UBER", cik:"0001543151",
+    pos:false, color:"#000000", cur:"USD",
+    price:"71,43",change:"-1,12%",
+    cap:"151,8B USD",pe:"18,9",fwdpe:"22,4",eps:"3,78",
+    rev:"43,9B USD",revg:"+16%",mgross:"39,1%",mop:"6,8%",mnet:"7,1%",
+    ebitda:"5,2B USD",fcf:"6,9B USD",earng:"+n/d",
+    roe:"66,2%",roa:"6,8%",dte:"1,93",cr:"1,12",
+    div:"brak",beta:"1,18",
+    h52:"87,00",l52:"56,97",vol:"14,3M",avol:"17,8M",
+    rec:"BUY",target:"92,00 USD",
+    emp:"32 600",sector:"Konsumpcja cykliczna",ind:"Transport / Mobility / Delivery",
+    desc:"Uber to globalny lider platform mobilności — przejazdy, Uber Eats, Freight. Działa w 70+ krajach, 161M aktywnych użytkowników, 7,4M kierowców i kurierów.",
+    edgar_period:"2024-09-30",
+    e_rev:"11,2B USD",e_gp:"4,4B USD",e_op:"0,49B USD",e_ni:"2,6B USD",
+    e_eps:"1,20 USD",e_mnet:"23,3%",e_mgr:"39,3%",e_mop:"4,4%",
+    e_assets:"34,0B USD",e_liab:"26,4B USD",e_eq:"7,6B USD",
+    e_cash:"5,9B USD",e_ltd:"9,5B USD",e_ca:"12,8B USD",e_cl:"11,4B USD",
+    e_cr:"1,12×",e_dr:"77,6%",
+    e_cfo:"1,72B USD",e_capex:"0,20B USD",e_fcf:"1,52B USD",e_div:"brak",
+    filings:[
+      {form:"10-K",date:"2024-02-14",url:"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001543151&type=10-K"},
+      {form:"10-Q",date:"2024-11-07",url:"https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001543151&type=10-Q"},
+    ],
+    verdict_color:"#f0b232",verdict_label:"UMIARKOWANIE POZYTYWNY",
+    summary:"Uber Q3 2024: przychody <strong>11,2 mld USD (+20% r/r)</strong> – rekord kwartalny. Trips wzrosły +17%, FCF osiągnął 1,7 mld USD. Spółka po raz pierwszy generuje regularny zysk operacyjny i gotówkę.",
+    kpis:[{l:"Przychody Q3",v:"11,2B$",c:"up"},{l:"FCF",v:"1,7B$",c:"up"},{l:"D/E ratio",v:"1,93",c:"ne"}],
+    rvtxt:"<strong>Mobility</strong> (przejazdy): 6,5B (+26% r/r) – wysoka marża, główny motor. <strong>Delivery</strong> (Eats): 3,9B (+17%). <strong>Freight</strong>: 0,8B (spowolnienie). Gross Bookings całości: 41B USD. Segment reklamowy (Uber Ads) jako nowe źródło dochodu o wysokiej marży.",
+    risks:["Ryzyko regulacyjne: klasyfikacja kierowców jako pracownicy (Wielka Brytania, UE)","Robotaxi i Tesla FSD jako długoterminowa groźba dla modelu biznesowego","Wysokie zadłużenie (D/E 1,93) i historycznie ujemny FCF (dopiero od 2023)","Intensywna konkurencja w Eats: DoorDash, GrubHub, lokalni gracze"],
+    outlook:"Buyback 7 mld USD ogłoszony. Partnerstwo z Waymo (Robotaxi) jako hedge na autonomizację. Prognoza Q4 Gross Bookings: 42–44 mld USD.",
+    verdict:"Uber dojrzewa jako biznes cash-generujący. Wycena jest rozsądna przy założeniu kontynuacji wzrostu. Kluczowe ryzyko długoterminowe: Robotaxi. Odpowiednia dla inwestorów z 3-5 letnim horyzontem.",
+  },
+  // ── S&P 500 ──────────────────────────────────────────────────────
+  {
+    name:"SPDR S&P 500 ETF (SPY)", ticker:"SPY", cik:null,
+    pos:true, color:"#5865f2", cur:"USD",
+    price:"592,14",change:"+0,47%",
+    cap:"526,3B USD",pe:"26,8",fwdpe:"22,1",eps:"22,09",
+    rev:"n/d",revg:"n/d",mgross:"n/d",mop:"n/d",mnet:"n/d",
+    ebitda:"n/d",fcf:"n/d",earng:"+11%",
+    roe:"n/d",roa:"n/d",dte:"n/d",cr:"n/d",
+    div:"1,27%",beta:"1,00",
+    h52:"613,23",l52:"491,82",vol:"54,2M",avol:"61,8M",
+    rec:"BUY",target:"640,00 USD",
+    emp:"n/d",sector:"ETF",ind:"Indeks 500 największych spółek USA",
+    desc:"SPDR S&P 500 ETF Trust śledzi indeks S&P 500 – koszyk 500 największych spółek notowanych na giełdach USA. Najstarszy i najbardziej płynny ETF świata. AuM ponad 526 mld USD.",
+    edgar_period:null,
+    // Brak EDGAR (ETF)
+    e_rev:null,e_gp:null,e_op:null,e_ni:null,
+    verdict_color:"#23a55a",verdict_label:"POZYTYWNY (długoterminowo)",
+    summary:"S&P 500 zakończył 2024 z <strong>+23,3% wzrostu</strong> – powyżej historycznej średniej ~10% rocznie. Główny motor: spółki AI (NVIDIA, Microsoft, Meta). Koncentracja indeksu na 'Magnificent 7' = 35% kapitalizacji.",
+    kpis:[{l:"Zwrot 2024",v:"+23,3%",c:"up"},{l:"P/E Fwd",v:"22,1×",c:"ne"},{l:"Dyw. Yield",v:"1,27%",c:"wh"}],
+    rvtxt:"Łączne zyski spółek S&P 500 wzrosły o <strong>~11% r/r</strong>. Sektor IT odpowiada za 31% indeksu. Fed utrzymał stopy wyżej przez dłużej co nie zaszkodziło akcjom – rynek zdyskontował 'soft landing'. Koncentracja na 10 spółkach = 35% indeksu.",
+    risks:["Wysokie wyceny: P/E 26,8× vs historyczna średnia 15–18×","Ryzyko utrzymania wysokich stóp Fed dłużej niż oczekiwano","Koncentracja – 10 spółek odpowiada za 35% indeksu","Spowolnienie gospodarcze / recesja mogłoby zepchnąć P/E do 15–18×"],
+    outlook:"Konsensus analityków: dalszy wzrost w 2025, tempo ~8–10%. Oczekiwane obniżki stóp procentowych wspierają wyceny. AI inwestycje napędzają capex i zyski spółek technologicznych.",
+    verdict:"S&P 500 / SPY to benchmark dla każdego inwestora długoterminowego. Przy wycenie powyżej historycznej średniej warto zachować ostrożność przy nowych wejściach. Dollar-cost averaging pozostaje optymalną strategią.",
+  },
+  // ── CD PROJEKT ───────────────────────────────────────────────────
+  {
+    name:"CD PROJEKT RED", ticker:"CDR.WA", cik:null,
+    pos:false, color:"#cc2222", cur:"PLN",
+    price:"142,50",change:"-0,63%",
+    cap:"13,8B PLN",pe:"28,4",fwdpe:"35,2",eps:"5,02",
+    rev:"1,1B PLN",revg:"-18%",mgross:"81,3%",mop:"27,4%",mnet:"23,8%",
+    ebitda:"420M PLN",fcf:"380M PLN",earng:"-12%",
+    roe:"9,3%",roa:"8,1%",dte:"0,04",cr:"5,43",
+    div:"1,20%",beta:"1,34",
+    h52:"185,00",l52:"110,20",vol:"345K",avol:"412K",
+    rec:"HOLD",target:"158,00 PLN",
+    emp:"1 100",sector:"Technologia/Media",ind:"Tworzenie gier wideo (AAA)",
+    desc:"CD PROJEKT RED – polskie studio AAA. Twórcy Wiedźmina (sprzedaż: 50M+ kopii) i Cyberpunk 2077 (+25M kopii + DLC Phantom Liberty). Właściciel platformy GOG.com. Pracuje nad Wiedźminem 4 (Polaris) i nowym IP.",
+    edgar_period:null,
+    verdict_color:"#f0b232",verdict_label:"NEUTRALNY / SPEKULACYJNY",
+    summary:"CD PROJEKT H1 2024: przychody <strong>321 mln PLN (-18% r/r)</strong> — naturalny cykl po szczycie DLC Phantom Liberty (Q4 2023). Spółka w fazie heavy investment na Wiedźmin 4. Silny bilans: 1,2B PLN gotówki, dług praktycznie brak.",
+    kpis:[{l:"Przychody H1",v:"321M PLN",c:"dn"},{l:"Gotówka",v:"1,2B PLN",c:"wh"},{l:"D/E",v:"0,04",c:"up"}],
+    rvtxt:"<strong>Backlog IP</strong>: Wiedźmin 3 + Cyberpunk 2077 generują ~15–20M PLN/kwartał ze sprzedaży backcatalog. <strong>GOG.com</strong>: ~8% przychodów. W produkcji równolegle: <strong>Wiedźmin 4 (Polaris)</strong> na Unreal Engine 5 + nowe IP Cyberpunk + projekt Hadar (nowe IP sci-fi).",
+    risks:["'Suchy okres' przychodów do ~2026/2027 – brak nowych premier","Ryzyko produkcji Wiedźmina 4: UE5 = nowe ryzyko techniczne i opóźnień","Rosnące koszty produkcji AAA w Polsce i globalnie","Odpływ kluczowych twórców i weteranów studia po premierze CP2077"],
+    outlook:"Wiedźmin 4 = kluczowy catalyst. Market wycenia premierę 2026–2027. Przy udanym launchu kurs może wrócić powyżej 200 PLN. Spółka nie potrzebuje finansowania zewnętrznego (1,2B PLN cash).",
+    verdict:"CD PROJEKT to zakład na sukces Wiedźmina 4. Idealna dla cierpliwych inwestorów z 2–4 letnim horyzontem. Nie nadaje się dla szukających krótkoterminowych katalizatorów.",
+  },
+];
+
+let idx = 0, cd = 20, demo_ms = 20000;
+
+function now(){
+  return new Date().toLocaleTimeString('pl-PL',{hour:'2-digit',minute:'2-digit'});
+}
+
+// ── WIADOMOŚĆ HELPER ─────────────────────────────────────────────
+function appendMsg(avClass, avEmoji, name, badge, html, delay=0){
+  const wrap = document.getElementById('msgs');
+  const d = document.createElement('div');
+  d.className = 'mg top';
+  d.style.animationDelay = delay+'ms';
+  d.innerHTML = `
+    <div class="bav ${avClass}">${avEmoji}</div>
+    <div class="mbody">
+      <div class="mmeta">
+        <span class="bname" style="color:#fff">${name}</span>
+        ${badge?`<span class="badge">${badge}</span>`:''}
+        <span class="mtime">Dziś o ${now()}</span>
+      </div>
+      ${html}
+    </div>`;
+  wrap.appendChild(d);
+  wrap.scrollTop = 99999;
+}
+
+// ── EMBED 1: NOTOWANIE (yfinance) ────────────────────────────────
+function buildQuote(r){
+  const arr = r.pos?'📈':'📉', sym=r.pos?'▲':'▼';
+  const cc  = r.pos?'green':'red';
+  return `
+<div class="embed embed-bg" style="border-color:${r.color}">
+  <div style="display:inline-flex;align-items:center;gap:5px;background:rgba(35,165,90,.1);color:var(--green);font-size:10px;font-weight:800;padding:2px 8px;border-radius:3px;margin-bottom:8px;border:1px solid rgba(35,165,90,.25)">
+    📈 Yahoo Finance – dane rynkowe
+  </div>
+  <div class="etitle">${arr} ${r.name} <span style="color:var(--muted);font-size:13px">(${r.ticker})</span></div>
+  <div class="edesc">${r.desc}</div>
+  <div class="egrid">
+    <div><div class="efname">💰 Cena</div><div class="efval"><span class="white" style="font-size:15px;font-weight:800">${r.price} ${r.cur}</span><br><span class="${cc}" style="font-weight:700">${sym} ${r.change}</span></div></div>
+    <div><div class="efname">🏦 Kapitalizacja</div><div class="efval">${r.cap}</div></div>
+    <div><div class="efname">📊 P/E · Fwd P/E</div><div class="efval">P/E: ${r.pe}<br>Fwd: ${r.fwdpe}</div></div>
+
+    <div><div class="efname">💼 Przychody · Wzrost</div><div class="efval">${r.rev}<br>Wzrost: ${r.revg}</div></div>
+    <div><div class="efname">📊 Marże</div><div class="efval">Brutto: ${r.mgross}<br>Oper: ${r.mop}<br>Netto: ${r.mnet}</div></div>
+    <div><div class="efname">📈 ROE · ROA</div><div class="efval">ROE: ${r.roe}<br>ROA: ${r.roa}</div></div>
+
+    <div><div class="efname">🏗️ Bilans</div><div class="efval">D/E: ${r.dte}<br>Curr.R: ${r.cr}</div></div>
+    <div><div class="efname">💸 FCF · EBITDA</div><div class="efval">FCF: ${r.fcf}<br>EBITDA: ${r.ebitda}</div></div>
+    <div><div class="efname">🎯 Dyw. · Beta</div><div class="efval">Dyw: ${r.div}<br>Beta: ${r.beta}</div></div>
+
+    <div><div class="efname">📅 52-tygodniowy</div><div class="efval">Max: ${r.h52}<br>Min: ${r.l52}</div></div>
+    <div><div class="efname">🔍 Analitycy</div><div class="efval">Rek: <span class="green" style="font-weight:800">${r.rec}</span><br>Cel: ${r.target}</div></div>
+    <div><div class="efname">📊 Wolumen</div><div class="efval">Dziś: ${r.vol}<br>Śr: ${r.avol}</div></div>
+  </div>
+  <div class="efooter">🏭 ${r.sector} · ${r.ind} · ${r.emp} prac. | Źródło: Yahoo Finance · ${new Date().toLocaleDateString('pl-PL')} ${now()}</div>
+</div>`;
+}
+
+// ── EMBED 2: SEC EDGAR ───────────────────────────────────────────
+function buildEdgar(r){
+  if(!r.cik) return null;
+  const filings_html = r.filings.map(f=>`<a href="${f.url}" style="color:var(--blue)">[${f.form} – ${f.date}]</a>`).join(' · ');
+  return `
+<div class="embed embed-bg" style="border-color:#00b0d7">
+  <div class="edgar-badge">🏛️ SEC EDGAR (data.sec.gov) – oficjalne 10-K/10-Q · bez API key</div>
+  <div class="etitle">📋 Sprawozdanie finansowe – ${r.name}</div>
+  <div class="edesc" style="margin-bottom:4px">Dane z obowiązkowych raportów składanych do amerykańskiej Komisji Papierów Wartościowych (SEC). Źródło: <strong>rząd USA 🇺🇸</strong>, brak pośredników, zero opóźnień. CIK: ${r.cik}</div>
+  <div style="font-size:11px;color:var(--muted);margin-bottom:10px;font-family:'JetBrains Mono',monospace">Okres: ${r.edgar_period}</div>
+  <div class="egrid">
+    <div>
+      <div class="efname">📋 Rachunek zysków i strat</div>
+      <div class="efval">Przychody: <strong class="white">${r.e_rev||'brak'}</strong><br>Zysk brutto: ${r.e_gp||'brak'}<br>Zysk oper.: ${r.e_op||'brak'}<br>Zysk netto: <strong class="white">${r.e_ni||'brak'}</strong></div>
+    </div>
+    <div>
+      <div class="efname">📊 Marże (wyliczone)</div>
+      <div class="efval">Brutto: ${r.e_mgr||'brak'}<br>Operacyjna: ${r.e_mop||'brak'}<br>Netto: <strong class="white">${r.e_mnet||'brak'}</strong></div>
+    </div>
+    <div>
+      <div class="efname">💹 EPS</div>
+      <div class="efval">EPS (diluted): <strong class="white">${r.e_eps||'brak'}</strong></div>
+    </div>
+
+    <div>
+      <div class="efname">🏦 Bilans</div>
+      <div class="efval">Aktywa: <strong class="white">${r.e_assets||'brak'}</strong><br>Zobowiązania: ${r.e_liab||'brak'}<br>Kapitał własny: <strong class="white">${r.e_eq||'brak'}</strong></div>
+    </div>
+    <div>
+      <div class="efname">💳 Płynność · Dług</div>
+      <div class="efval">Gotówka: ${r.e_cash||'brak'}<br>Dług dług.: ${r.e_ltd||'brak'}<br>Curr. ratio: ${r.e_cr||'brak'}<br>Debt ratio: ${r.e_dr||'brak'}</div>
+    </div>
+    <div>
+      <div class="efname">💸 Cash Flow</div>
+      <div class="efval">CFO: <strong class="white">${r.e_cfo||'brak'}</strong><br>CAPEX: ${r.e_capex||'brak'}<br>FCF: <strong class="green">${r.e_fcf||'brak'}</strong><br>Dywidendy: ${r.e_div||'brak'}</div>
+    </div>
+  </div>
+  <div style="margin-top:8px;font-size:12px;color:var(--txt2)">📁 Ostatnie złożenia SEC: ${filings_html}</div>
+  <div class="efooter" style="margin-top:8px">Źródło: data.sec.gov/api/xbrl/companyfacts/${r.cik}.json | Bez API key | Aktualizacje real-time</div>
+</div>`;
+}
+
+// ── EMBED 3: AI ANALIZA ──────────────────────────────────────────
+function buildAI(r){
+  const kpis = r.kpis.map(k=>`<div class="kpi"><div class="kpi-l">${k.l}</div><div class="kpi-v ${k.c}">${k.v}</div></div>`).join('');
+  const risks = r.risks.map(rk=>`<li>${rk}</li>`).join('');
+  return `
+<div class="embed embed-bg" style="border-color:var(--gold)">
+  <div class="ai-badge">🤖 Analiza Claude AI · Yahoo Finance + SEC EDGAR</div>
+  <div class="etitle">📊 Analiza inwestycyjna – ${r.name} (${r.ticker})</div>
+
+  <div class="ai-section">
+    <div class="ai-sec-title">Podsumowanie wykonania</div>
+    <div class="ai-text">${r.summary}</div>
+  </div>
+
+  <div class="kpis">${kpis}</div>
+
+  <div class="ai-section">
+    <div class="ai-sec-title">Struktura przychodów i rentowność</div>
+    <div class="ai-text">${r.rvtxt}</div>
+  </div>
+
+  <div class="ai-section">
+    <div class="ai-sec-title">Kluczowe ryzyka</div>
+    <ul class="bullets">${risks}</ul>
+  </div>
+
+  <div class="ai-section">
+    <div class="ai-sec-title">Perspektywy i prognoza</div>
+    <div class="ai-text">${r.outlook}</div>
+  </div>
+
+  <div class="verdict" style="border-color:${r.verdict_color}">
+    <strong style="color:${r.verdict_color}">⚖️ VERDICT: ${r.verdict_label}</strong>
+    ${r.verdict}
+  </div>
+
+  <div class="efooter" style="margin-top:12px">🤖 Claude AI · Dane: Yahoo Finance + SEC EDGAR (data.sec.gov) · ${new Date().toLocaleDateString('pl-PL')} ${now()} · Nie stanowi porady inwestycyjnej</div>
+</div>`;
+}
+
+// ── PROGRESS ─────────────────────────────────────────────────────
+function animProg(ms){
+  const bar = document.getElementById('pb');
+  bar.style.transition='none'; bar.style.width='0%';
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    bar.style.transition=`width ${ms}ms linear`;
+    bar.style.width='100%';
+  }));
+}
+
+// ── SEND ROUND ───────────────────────────────────────────────────
+function sendRound(){
+  const r = ROUNDS[idx % ROUNDS.length]; idx++;
+
+  // msg 1: notowanie
+  appendMsg('bav-quote','📈','FinanceBot','BOT', buildQuote(r), 0);
+
+  // msg 2: EDGAR (po 1.5s)
+  const edgarHtml = buildEdgar(r);
+  if(edgarHtml){
+    setTimeout(()=>{
+      appendMsg('bav-edgar','🏛️','FinanceBot','BOT', edgarHtml, 0);
+      document.getElementById('msgs').scrollTop=99999;
+    }, 1600);
+  }
+
+  // msg 3: AI analiza (po 3s)
+  setTimeout(()=>{
+    appendMsg('bav-ai','🤖','FinanceBot','BOT', buildAI(r), 0);
+    document.getElementById('msgs').scrollTop=99999;
+  }, edgarHtml ? 3200 : 1800);
+
+  // reset
+  cd = demo_ms/1000;
+  animProg(demo_ms);
+}
+
+// countdown
+setInterval(()=>{
+  cd = Math.max(0, cd-1);
+  const m=Math.floor(cd/60), s=cd%60;
+  document.getElementById('cd').textContent=`${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}, 1000);
+
+// system info
+setTimeout(()=>{
+  const d=document.createElement('div');
+  d.style.cssText='text-align:center;color:var(--muted);font-size:11px;padding:8px 16px;font-family:"JetBrains Mono",monospace;border-bottom:1px solid rgba(255,255,255,.04);margin-bottom:4px';
+  d.innerHTML = '— Demo: co 20 sek | Produkcja: co 15 min | 3 wiadomości / runda: Notowanie → SEC EDGAR → AI Analiza —';
+  document.getElementById('msgs').appendChild(d);
+},50);
+
+sendRound();
+setInterval(sendRound, demo_ms);
+</script>
+</body>
+</html>
