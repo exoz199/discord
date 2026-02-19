@@ -18,6 +18,7 @@ import requests
 import json
 import os
 import random
+import time
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -34,6 +35,14 @@ ANTHROPIC_KEY = "TWOJ_KLUCZ_ANTHROPIC"     # console.anthropic.com → API Keys
 # BOT_TOKEN     = os.environ["BOT_TOKEN"]
 # CHANNEL_ID    = int(os.environ["CHANNEL_ID"])
 # ANTHROPIC_KEY = os.environ["ANTHROPIC_KEY"]
+
+# ── Anti-rate-limit: cache danych yfinance ────────────────────────
+# Dane są cache'owane przez CACHE_TTL minut — bot nie będzie pytał
+# Yahoo Finance częściej niż raz na tyle minut dla tej samej spółki.
+CACHE_TTL     = 30          # minuty ważności cache (zalecane min. 20)
+YFINANCE_WAIT = 3.0         # sekundy czekania między requestami do Yahoo
+MAX_RETRIES   = 3           # ile razy ponawiać przy błędzie 429
+_cache: dict  = {}          # słownik {ticker: (timestamp, data)}
 
 # CIK-i dla SEC EDGAR (data.sec.gov)
 # Sprawdź: https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=&CIK=TICKER
@@ -127,50 +136,84 @@ def fmt_num(val) -> str:
 # ─────────────────────────────────────────────────────────────────
 # ŹRÓDŁO 1: yfinance – ceny i metryki rynkowe
 # ─────────────────────────────────────────────────────────────────
+def _fetch_yfinance_raw(ticker: str) -> Optional[dict]:
+    """Surowe pobranie z yfinance — bez cache, z retry przy 429."""
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            t    = yf.Ticker(ticker)
+            info = t.info
+            if not info or ("regularMarketPrice" not in info and "currentPrice" not in info):
+                print(f"[yfinance] Pusta odpowiedź dla {ticker} (próba {attempt})")
+                time.sleep(YFINANCE_WAIT * attempt)
+                continue
+            return {
+                "name":          info.get("shortName", ticker),
+                "price":         info.get("currentPrice") or info.get("regularMarketPrice"),
+                "change_pct":    info.get("regularMarketChangePercent"),
+                "market_cap":    info.get("marketCap"),
+                "pe":            info.get("trailingPE"),
+                "fwd_pe":        info.get("forwardPE"),
+                "eps":           info.get("trailingEps"),
+                "revenue":       info.get("totalRevenue"),
+                "margin":        info.get("profitMargins"),
+                "gross_margin":  info.get("grossMargins"),
+                "op_margin":     info.get("operatingMargins"),
+                "roe":           info.get("returnOnEquity"),
+                "roa":           info.get("returnOnAssets"),
+                "dte":           info.get("debtToEquity"),
+                "current_ratio": info.get("currentRatio"),
+                "div":           info.get("dividendYield"),
+                "beta":          info.get("beta"),
+                "high52":        info.get("fiftyTwoWeekHigh"),
+                "low52":         info.get("fiftyTwoWeekLow"),
+                "volume":        info.get("regularMarketVolume"),
+                "avg_volume":    info.get("averageVolume"),
+                "free_cf":       info.get("freeCashflow"),
+                "ebitda":        info.get("ebitda"),
+                "sector":        info.get("sector", ""),
+                "industry":      info.get("industry", ""),
+                "description":   (info.get("longBusinessSummary") or "")[:450],
+                "rec":           info.get("recommendationKey", "").upper(),
+                "target":        info.get("targetMeanPrice"),
+                "rev_growth":    info.get("revenueGrowth"),
+                "earn_growth":   info.get("earningsGrowth"),
+                "employees":     info.get("fullTimeEmployees"),
+                "country":       info.get("country", ""),
+            }
+        except Exception as e:
+            err = str(e)
+            if "429" in err or "Too Many Requests" in err:
+                wait = YFINANCE_WAIT * (attempt * 2)   # exponential backoff
+                print(f"[yfinance] 429 rate-limit dla {ticker} — czekam {wait:.0f}s (próba {attempt}/{MAX_RETRIES})")
+                time.sleep(wait)
+            else:
+                print(f"[yfinance] Błąd {ticker}: {e}")
+                return None
+    print(f"[yfinance] Wszystkie próby wyczerpane dla {ticker}")
+    return None
+
+
 def get_market_data(ticker: str) -> Optional[dict]:
-    """Pobiera dane rynkowe z Yahoo Finance."""
-    try:
-        t    = yf.Ticker(ticker)
-        info = t.info
-        if not info or "regularMarketPrice" not in info:
-            return None
-        return {
-            "name":           info.get("shortName", ticker),
-            "price":          info.get("currentPrice") or info.get("regularMarketPrice"),
-            "change_pct":     info.get("regularMarketChangePercent"),
-            "market_cap":     info.get("marketCap"),
-            "pe":             info.get("trailingPE"),
-            "fwd_pe":         info.get("forwardPE"),
-            "eps":            info.get("trailingEps"),
-            "revenue":        info.get("totalRevenue"),
-            "margin":         info.get("profitMargins"),
-            "gross_margin":   info.get("grossMargins"),
-            "op_margin":      info.get("operatingMargins"),
-            "roe":            info.get("returnOnEquity"),
-            "roa":            info.get("returnOnAssets"),
-            "dte":            info.get("debtToEquity"),
-            "current_ratio":  info.get("currentRatio"),
-            "div":            info.get("dividendYield"),
-            "beta":           info.get("beta"),
-            "high52":         info.get("fiftyTwoWeekHigh"),
-            "low52":          info.get("fiftyTwoWeekLow"),
-            "volume":         info.get("regularMarketVolume"),
-            "avg_volume":     info.get("averageVolume"),
-            "free_cf":        info.get("freeCashflow"),
-            "ebitda":         info.get("ebitda"),
-            "sector":         info.get("sector", ""),
-            "industry":       info.get("industry", ""),
-            "description":    (info.get("longBusinessSummary") or "")[:450],
-            "rec":            info.get("recommendationKey", "").upper(),
-            "target":         info.get("targetMeanPrice"),
-            "rev_growth":     info.get("revenueGrowth"),
-            "earn_growth":    info.get("earningsGrowth"),
-            "employees":      info.get("fullTimeEmployees"),
-            "country":        info.get("country", ""),
-        }
-    except Exception as e:
-        print(f"[yfinance] Błąd {ticker}: {e}")
-        return None
+    """Pobiera dane rynkowe z Yahoo Finance z cache'm i ochroną przed rate-limit."""
+    global _cache
+    now = datetime.now()
+
+    # Sprawdź cache
+    if ticker in _cache:
+        cached_at, cached_data = _cache[ticker]
+        age_min = (now - cached_at).total_seconds() / 60
+        if age_min < CACHE_TTL:
+            print(f"[cache] Używam cache dla {ticker} (wiek: {age_min:.1f} min, TTL: {CACHE_TTL} min)")
+            return cached_data
+
+    # Czekaj chwilę między requestami żeby nie bombardować Yahoo
+    time.sleep(YFINANCE_WAIT)
+
+    data = _fetch_yfinance_raw(ticker)
+    if data:
+        _cache[ticker] = (now, data)
+        print(f"[yfinance] Pobrano i zapisano cache dla {ticker}")
+    return data
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -620,10 +663,28 @@ async def send_update():
     ticker, cik, cur = cfg["ticker"], cfg["cik"], cfg["currency"]
     print(f"[{datetime.now():%H:%M}] Wysyłam: {name} ({ticker})")
 
-    # 1) Dane rynkowe (yfinance)
+    # 1) Dane rynkowe (yfinance) — z cache + retry
     market = get_market_data(ticker)
     if not market:
-        print(f"[Bot] Brak danych rynkowych dla {ticker}")
+        # Powiadom na kanale i zapisz w historii żeby nie utknąć w pętli
+        err_embed = discord.Embed(
+            title       = f"⚠️ Tymczasowy problem z danymi — {name} ({ticker})",
+            description = (
+                "Yahoo Finance zwróciło błąd rate-limit (429). "
+                "Bot automatycznie spróbuje ponownie przy następnej rundzie.
+
+"
+                "Jest to normalne przy intensywnym użyciu — dane będą dostępne za chwilę."
+            ),
+            color       = discord.Color.orange(),
+            timestamp   = datetime.now(),
+        )
+        err_embed.set_footer(text="Bot wznowi działanie automatycznie przy kolejnym interwale")
+        await channel.send(embed=err_embed)
+        # Zapisz w historii żeby przejść do kolejnej spółki zamiast blokować tę samą
+        history[ticker] = datetime.now().isoformat()
+        save_history(history)
+        print(f"[Bot] ⚠️ Pominięto {ticker} z powodu błędu danych — przejście do następnej spółki")
         return
 
     # 2) Dane SEC EDGAR (jeśli dostępny CIK)
