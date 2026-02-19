@@ -1,4 +1,5 @@
 discord.py>=2.3.0
-yfinance>=0.2.30
 anthropic>=0.25.0
 requests>=2.31.0
+# Finnhub zastąpił yfinance — nie ma już problemu z 429/Unauthorized
+# yfinance USUNIĘTE celowo
